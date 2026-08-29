@@ -22,6 +22,8 @@ class ApiError extends Error {
     }
 }
 
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api';
+
 class ApiClient {
     private token: string | null = null;
 
@@ -38,14 +40,39 @@ class ApiClient {
         }
     }
 
-    private async mockDelay() {
-        return new Promise(resolve => setTimeout(resolve, 500));
+    private async request<T>(
+        endpoint: string,
+        options: RequestInit = {},
+        requireAuth = true
+    ): Promise<ApiResponse<T>> {
+        const headers: Record<string, string> = {
+            'Content-Type': 'application/json',
+        };
+
+        if (requireAuth && this.token) {
+            headers['Authorization'] = `Bearer ${this.token}`;
+        }
+
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+            ...options,
+            headers: { ...headers, ...(options.headers as Record<string, string>) },
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new ApiError(
+                data.message || data.error?.message || 'Request failed',
+                response.status,
+                data
+            );
+        }
+
+        return data;
     }
 
-    // Authentication
     async login(email: string, password: string) {
-        await this.mockDelay();
-        const response: ApiResponse<{
+        const response = await this.request<{
             token: string;
             admin: {
                 id: string;
@@ -53,18 +80,10 @@ class ApiClient {
                 full_name: string;
                 role: string;
             };
-        }> = {
-            success: true,
-            data: {
-                token: 'mock-token-' + Date.now(),
-                admin: {
-                    id: '1',
-                    email: email || 'admin@bazario.com',
-                    full_name: 'Bazario Admin',
-                    role: 'SUPER_ADMIN',
-                }
-            }
-        };
+        }>('/admin/login', {
+            method: 'POST',
+            body: JSON.stringify({ email, password }),
+        }, false);
 
         if (response.success && response.data) {
             this.setToken(response.data.token);
@@ -74,244 +93,118 @@ class ApiClient {
     }
 
     async logout() {
-        await this.mockDelay();
-        this.setToken(null);
+        try {
+            await this.request('/admin/logout', { method: 'POST' });
+        } finally {
+            this.setToken(null);
+        }
     }
 
     async getProfile() {
-        await this.mockDelay();
-        return {
-            success: true,
-            data: {
-                id: '1',
-                email: 'admin@bazario.com',
-                full_name: 'Bazario Admin',
-                role: 'SUPER_ADMIN',
-                last_login: new Date().toISOString(),
-                created_at: new Date().toISOString(),
-            }
-        };
+        return this.request('/admin/profile');
     }
 
-    // Dashboard
+    async updateProfile(data: { full_name?: string; phone?: string; bio?: string }) {
+        return this.request('/admin/profile', {
+            method: 'PUT',
+            body: JSON.stringify(data),
+        });
+    }
+
     async getDashboardStats() {
-        await this.mockDelay();
-        return {
-            success: true,
-            data: {
-                stores: {
-                    total: 125,
-                    active: 98,
-                    pending: 15,
-                    rejected: 12,
-                },
-                riders: {
-                    total: 450,
-                    active: 380,
-                    pending: 40,
-                    rejected: 30,
-                },
-                orders: {
-                    total: 12540,
-                    thisMonth: 1250,
-                },
-                products: {
-                    total: 8500,
-                },
-                revenue: {
-                    total: 580000,
-                    thisMonth: 45000,
-                },
-            }
-        };
+        return this.request('/admin/dashboard/stats');
     }
 
-    // Stores Management
     async getStores(params: {
         status?: string;
         page?: number;
         limit?: number;
         search?: string;
     } = {}) {
-        await this.mockDelay();
-        const stores = [
-            { id: '1', name: 'Bazario Store 1', owner: 'John Doe', status: 'ACTIVE', category: 'Electronics', revenue: 5000 },
-            { id: '2', name: 'Bazario Store 2', owner: 'Jane Smith', status: 'ACTIVE', category: 'Fashion', revenue: 3500 },
-            { id: '3', name: 'Fresh Market', owner: 'Mike Brown', status: 'PENDING', category: 'Groceries', revenue: 0 },
-            { id: '4', name: 'Tech Zone', owner: 'Sarah Wilson', status: 'REJECTED', category: 'Electronics', revenue: 0 },
-            { id: '5', name: 'Style Hub', owner: 'Amy Lee', status: 'ACTIVE', category: 'Fashion', revenue: 2100 },
-        ];
-        return {
-            success: true,
-            data: stores,
-            pagination: {
-                page: params.page || 1,
-                limit: params.limit || 10,
-                total: stores.length,
-                totalPages: 1
-            }
-        };
+        const query = new URLSearchParams();
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined) query.append(key, String(value));
+        });
+        const qs = query.toString() ? `?${query.toString()}` : '';
+        return this.request(`/admin/stores${qs}`);
     }
 
     async updateStoreStatus(id: string, status: string, notes?: string) {
-        await this.mockDelay();
-        return { success: true, message: `Store ${id} status updated to ${status}` };
+        return this.request(`/admin/stores/${id}/status`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status, notes }),
+        });
     }
 
     async deleteStore(id: string) {
-        await this.mockDelay();
-        return { success: true, message: `Store ${id} deleted` };
+        return this.request(`/admin/stores/${id}`, { method: 'DELETE' });
     }
 
-    // Riders Management
     async getRiders(params: {
         status?: string;
         page?: number;
         limit?: number;
         search?: string;
     } = {}) {
-        await this.mockDelay();
-        const riders = [
-            {
-                id: '1',
-                name: 'Express Rider 1',
-                email: 'rider1@bazario.com',
-                phone: '+91 98765 43210',
-                vehicle_type: 'Bike',
-                vehicle_number: 'KA-01-AB-1234',
-                address: '123 Main St, Koramangala',
-                city: 'Bangalore',
-                pincode: '560034',
-                emergency_contact_name: 'Jane Doe',
-                emergency_contact_phone: '+91 98765 43211',
-                status: 'approved',
-                total_deliveries: 150,
-                rating: 4.8,
-                total_earnings: 15000,
-                is_online: true,
-                created_at: new Date(Date.now() - 10000000).toISOString(),
-                last_online_at: new Date().toISOString()
-            },
-            {
-                id: '2',
-                name: 'Express Rider 2',
-                email: 'rider2@bazario.com',
-                phone: '+91 98765 43212',
-                vehicle_type: 'Scooter',
-                vehicle_number: 'KA-05-CD-5678',
-                address: '456 2nd Ave, Indiranagar',
-                city: 'Bangalore',
-                pincode: '560038',
-                emergency_contact_name: 'John Smith',
-                emergency_contact_phone: '+91 98765 43213',
-                status: 'approved',
-                total_deliveries: 85,
-                rating: 4.5,
-                total_earnings: 8500,
-                is_online: false,
-                created_at: new Date(Date.now() - 5000000).toISOString(),
-                last_online_at: new Date(Date.now() - 3600000).toISOString()
-            },
-            {
-                id: '3',
-                name: 'New Delivery Guy',
-                email: 'rider3@bazario.com',
-                phone: '+91 98765 43214',
-                vehicle_type: 'Bike',
-                vehicle_number: 'KA-03-EF-9012',
-                address: '789 3rd Cross, Jayanagar',
-                city: 'Bangalore',
-                pincode: '560041',
-                emergency_contact_name: 'Mom',
-                emergency_contact_phone: '+91 98765 43215',
-                status: 'pending',
-                total_deliveries: 0,
-                rating: 0,
-                total_earnings: 0,
-                is_online: false,
-                created_at: new Date().toISOString()
-            },
-        ];
-        return {
-            success: true,
-            data: riders,
-            pagination: {
-                page: params.page || 1,
-                limit: params.limit || 10,
-                total: riders.length,
-                totalPages: 1
-            }
-        };
+        const query = new URLSearchParams();
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined) query.append(key, String(value));
+        });
+        const qs = query.toString() ? `?${query.toString()}` : '';
+        return this.request(`/admin/riders${qs}`);
     }
 
     async updateRiderStatus(id: string, status: string, notes?: string) {
-        await this.mockDelay();
-        return { success: true, message: `Rider ${id} status updated to ${status}` };
+        return this.request(`/admin/riders/${id}/status`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status, notes }),
+        });
     }
 
     async deleteRider(id: string) {
-        await this.mockDelay();
-        return { success: true, message: `Rider ${id} deleted` };
+        return this.request(`/admin/riders/${id}`, { method: 'DELETE' });
     }
 
-    // Products Management
     async getProducts(params?: {
         page?: number;
         limit?: number;
         search?: string;
         store_id?: string;
     }) {
-        await this.mockDelay();
-        const products = [
-            { id: '1', name: 'Bazario Pro X', price: 999, category: 'Electronics', stock: 50, status: 'PUBLISHED' },
-            { id: '2', name: 'Summer Tee', price: 29, category: 'Fashion', stock: 200, status: 'PUBLISHED' },
-            { id: '3', name: 'Organic Honey', price: 15, category: 'Groceries', stock: 150, status: 'DRAFT' },
-        ];
-        return {
-            success: true,
-            data: products,
-            pagination: {
-                page: params?.page || 1,
-                limit: params?.limit || 10,
-                total: products.length,
-                totalPages: 1
-            }
-        };
+        const query = new URLSearchParams();
+        if (params) {
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== undefined) query.append(key, String(value));
+            });
+        }
+        const qs = query.toString() ? `?${query.toString()}` : '';
+        return this.request(`/admin/products${qs}`);
     }
 
     async getProduct(id: string) {
-        await this.mockDelay();
-        return {
-            success: true,
-            data: { id, name: 'Sample Product', price: 100, description: 'Mock description' }
-        };
+        return this.request(`/admin/products/${id}`);
     }
 
-    // Customers Management
     async getCustomers(params?: {
         page?: number;
         limit?: number;
         search?: string;
         status?: string;
     }) {
-        await this.mockDelay();
-        const customers = [
-            { id: '1', name: 'Alice Johnson', email: 'alice@example.com', orders: 12, status: 'ACTIVE' },
-            { id: '2', name: 'Bob Smith', email: 'bob@example.com', orders: 5, status: 'ACTIVE' },
-        ];
-        return {
-            success: true,
-            data: customers,
-            pagination: {
-                page: params?.page || 1,
-                limit: params?.limit || 10,
-                total: customers.length,
-                totalPages: 1
-            }
-        };
+        const query = new URLSearchParams();
+        if (params) {
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== undefined) query.append(key, String(value));
+            });
+        }
+        const qs = query.toString() ? `?${query.toString()}` : '';
+        return this.request(`/admin/customers${qs}`);
     }
 
-    // Orders Management
+    async getCustomerDetails(customerId: string) {
+        return this.request(`/admin/customers/${customerId}`);
+    }
+
     async getOrders(params?: {
         page?: number;
         limit?: number;
@@ -320,46 +213,127 @@ class ApiClient {
         startDate?: string;
         endDate?: string;
     }) {
-        await this.mockDelay();
-        const orders = [
-            { id: 'ORD001', customer: 'Alice Johnson', total: 150.50, status: 'DELIVERED', date: new Date().toISOString() },
-            { id: 'ORD002', customer: 'Bob Smith', total: 45.00, status: 'PENDING', date: new Date().toISOString() },
-            { id: 'ORD003', customer: 'Charlie Brown', total: 299.99, status: 'PROCESSING', date: new Date().toISOString() },
-        ];
-        return {
-            success: true,
-            data: orders,
-            pagination: {
-                page: params?.page || 1,
-                limit: params?.limit || 10,
-                total: orders.length,
-                totalPages: 1
-            }
-        };
-    }
-
-    async getCustomerDetails(customerId: string) {
-        await this.mockDelay();
-        return { success: true, data: { id: customerId, name: 'Mock Customer', email: 'mock@example.com' } };
+        const query = new URLSearchParams();
+        if (params) {
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== undefined) query.append(key, String(value));
+            });
+        }
+        const qs = query.toString() ? `?${query.toString()}` : '';
+        return this.request(`/admin/orders${qs}`);
     }
 
     async getOrderDetails(orderId: string) {
-        await this.mockDelay();
-        return { success: true, data: { id: orderId, total: 100, items: [] } };
+        return this.request(`/admin/orders/${orderId}`);
     }
 
-    async getActivityLog(params: {
-        page?: number;
-        limit?: number;
-    } = {}) {
-        await this.mockDelay();
-        return {
-            success: true,
-            data: [
-                { id: '1', action: 'Store Approved', admin: 'Bazario Admin', timestamp: new Date().toISOString() },
-                { id: '2', action: 'New Rider Registered', admin: 'System', timestamp: new Date().toISOString() },
-            ]
-        };
+    async getActivityLog(params: { page?: number; limit?: number } = {}) {
+        const query = new URLSearchParams();
+        Object.entries(params).forEach(([key, value]) => {
+            if (value !== undefined) query.append(key, String(value));
+        });
+        const qs = query.toString() ? `?${query.toString()}` : '';
+        return this.request(`/admin/activity${qs}`);
+    }
+
+    // Commission endpoints
+    async getCommissionSettings() {
+        return this.request('/commissions/settings');
+    }
+
+    async updateCommissionSettings(settings: Record<string, unknown>) {
+        return this.request('/commissions/settings', {
+            method: 'PUT',
+            body: JSON.stringify(settings),
+        });
+    }
+
+    async getCommissionDailySummary(params?: { date?: string }) {
+        const query = params?.date ? `?date=${params.date}` : '';
+        return this.request(`/commissions/daily-summary${query}`);
+    }
+
+    // Coupon admin endpoints
+    async getCoupons(params?: { page?: number; limit?: number; search?: string; is_active?: boolean }) {
+        const query = new URLSearchParams();
+        if (params) {
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== undefined) query.append(key, String(value));
+            });
+        }
+        const qs = query.toString() ? `?${query.toString()}` : '';
+        return this.request(`/coupons/admin${qs}`);
+    }
+
+    async createCoupon(coupon: Record<string, unknown>) {
+        return this.request('/coupons/admin', {
+            method: 'POST',
+            body: JSON.stringify(coupon),
+        });
+    }
+
+    async updateCoupon(id: string, coupon: Record<string, unknown>) {
+        return this.request(`/coupons/admin/${id}`, {
+            method: 'PUT',
+            body: JSON.stringify(coupon),
+        });
+    }
+
+    async deleteCoupon(id: string) {
+        return this.request(`/coupons/admin/${id}`, { method: 'DELETE' });
+    }
+
+    async toggleCoupon(id: string) {
+        return this.request(`/coupons/admin/${id}/toggle`, { method: 'PATCH' });
+    }
+
+    // Support endpoints
+    async getSupportTickets(params?: { status?: string; category?: string }) {
+        const query = new URLSearchParams();
+        if (params) {
+            Object.entries(params).forEach(([key, value]) => {
+                if (value !== undefined) query.append(key, String(value));
+            });
+        }
+        const qs = query.toString() ? `?${query.toString()}` : '';
+        return this.request(`/support/tickets${qs}`);
+    }
+
+    async getSupportMessages(ticketId: string) {
+        return this.request(`/support/tickets/${ticketId}/messages`);
+    }
+
+    async getSupportTicket(ticketId: string) {
+        const response = await this.request<{ ticket: unknown }>(`/support/tickets/${ticketId}`);
+        return response;
+    }
+
+    async sendSupportMessage(ticketId: string, message: string, senderId: string, senderType = 'admin') {
+        return this.request(`/support/tickets/${ticketId}/messages`, {
+            method: 'POST',
+            body: JSON.stringify({ message, senderId, senderType }),
+        });
+    }
+
+    async updateTicketStatus(ticketId: string, status: string) {
+        return this.request(`/support/tickets/${ticketId}/status`, {
+            method: 'PUT',
+            body: JSON.stringify({ status }),
+        });
+    }
+
+    async getSupportStats() {
+        return this.request('/support/stats');
+    }
+
+    // Ratings
+    async getRatingsAnalytics() {
+        return this.request('/ratings/analytics');
+    }
+
+    async getAllRatings(type?: string) {
+        const query = type ? `?type=${type}` : '';
+        return this.request(`/ratings/all${query}`);
     }
 }
 

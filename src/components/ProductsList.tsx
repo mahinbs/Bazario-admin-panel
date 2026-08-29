@@ -27,7 +27,20 @@ import {
     DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { fetchMockProducts, Product } from "@/lib/mockData";
+import { api } from "@/lib/api";
+
+export interface Product {
+    id: string;
+    name: string;
+    category: string;
+    price: number;
+    stock: number;
+    sales: number;
+    image: string;
+    status: 'active' | 'draft' | 'archived';
+    storeName: string;
+    description?: string;
+}
 
 interface ProductsListProps {
     storeId?: string;
@@ -47,34 +60,39 @@ export default function ProductsList({ storeId, showStoreInfo = true }: Products
     });
     const { toast } = useToast();
 
+    const mapBackendProduct = (p: any): Product => ({
+        id: p.id,
+        name: p.name,
+        category: p.category || 'General',
+        price: Number(p.price) || 0,
+        stock: p.stock ?? 0,
+        sales: p.sales_count ?? 0,
+        image: p.image_url || '',
+        status: p.is_active ? 'active' : 'draft',
+        storeName: p.store_owners?.store_name || 'Unknown Store',
+        description: p.description,
+    });
+
     const loadProducts = async (page = 1) => {
         try {
             setLoading(true);
-            const response = await fetchMockProducts(page, pagination.limit);
-
-            // Filter by storeId if present
-            let filteredProducts = response.products;
-            if (storeId) {
-                // Since mock data logic for filtering by store is simplistic in this context
-                // we might just filter client side or accept all for now as it is a mock
-                filteredProducts = response.products.filter(p => p.storeName.includes(storeId) || true);
-            }
-
-            if (searchTerm) {
-                filteredProducts = filteredProducts.filter(p =>
-                    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                    p.category.toLowerCase().includes(searchTerm.toLowerCase())
-                );
-            }
-
-            setProducts(filteredProducts);
-            setPagination(prev => ({
-                ...prev,
+            const response = await api.getProducts({
                 page,
-                total: response.total,
-                totalPages: Math.ceil(response.total / prev.limit)
-            }));
+                limit: pagination.limit,
+                search: searchTerm || undefined,
+                store_id: storeId,
+            });
 
+            if (response.success && response.data) {
+                const mapped = (response.data as any[]).map(mapBackendProduct);
+                setProducts(mapped);
+                setPagination(prev => ({
+                    ...prev,
+                    page,
+                    total: response.pagination?.total ?? mapped.length,
+                    totalPages: response.pagination?.totalPages ?? 1,
+                }));
+            }
         } catch (error: any) {
             console.error('Failed to fetch products:', error);
             toast({
@@ -88,7 +106,7 @@ export default function ProductsList({ storeId, showStoreInfo = true }: Products
     };
 
     useEffect(() => {
-        loadProducts();
+        loadProducts(1);
     }, [searchTerm, storeId]);
 
     const handleSearch = (value: string) => {
@@ -96,19 +114,15 @@ export default function ProductsList({ storeId, showStoreInfo = true }: Products
         setPagination(prev => ({ ...prev, page: 1 }));
     };
 
-    const formatPrice = (price: number) => {
-        return `₹${price.toLocaleString()}`;
-    };
+    const formatPrice = (price: number) => `₹${price.toLocaleString()}`;
 
-    const getStatusColor = (status: string) => {
-        return status === 'active'
+    const getStatusColor = (status: string) =>
+        status === 'active'
             ? "bg-green-100 text-green-800 border-green-200"
             : "bg-gray-100 text-gray-800 border-gray-200";
-    };
 
     return (
         <div className="space-y-6">
-            {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
                     <h2 className="text-2xl font-bold text-foreground">Products List</h2>
@@ -129,7 +143,6 @@ export default function ProductsList({ storeId, showStoreInfo = true }: Products
                 </div>
             </div>
 
-            {/* Stats */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <Card>
                     <CardContent className="p-4">
@@ -159,9 +172,7 @@ export default function ProductsList({ storeId, showStoreInfo = true }: Products
                             <Store className="w-8 h-8 text-admin-red mr-3" />
                             <div>
                                 <p className="text-sm font-medium text-muted-foreground">Stores</p>
-                                <p className="text-2xl font-bold">
-                                    {new Set(products.map(p => p.storeName)).size}
-                                </p>
+                                <p className="text-2xl font-bold">{new Set(products.map(p => p.storeName)).size}</p>
                             </div>
                         </div>
                     </CardContent>
@@ -181,19 +192,18 @@ export default function ProductsList({ storeId, showStoreInfo = true }: Products
                 </Card>
             </div>
 
-            {/* Products Table */}
             <Card>
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <Package className="w-5 h-5" />
                         Products ({pagination.total})
                     </CardTitle>
-                    <CardDescription>
-                        Browse and manage products across the platform
-                    </CardDescription>
+                    <CardDescription>Browse and manage products across the platform</CardDescription>
                 </CardHeader>
                 <CardContent>
-                    {products.length === 0 && !loading ? (
+                    {loading ? (
+                        <div className="text-center py-8 text-muted-foreground">Loading products...</div>
+                    ) : products.length === 0 ? (
                         <div className="text-center py-8">
                             <Package className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
                             <p className="text-muted-foreground">
@@ -220,47 +230,26 @@ export default function ProductsList({ storeId, showStoreInfo = true }: Products
                                             <div className="flex items-center gap-3">
                                                 <div className="w-12 h-12 bg-muted rounded-lg flex items-center justify-center overflow-hidden">
                                                     {product.image ? (
-                                                        <img
-                                                            src={product.image}
-                                                            alt={product.name}
-                                                            className="w-full h-full object-cover"
-                                                        />
+                                                        <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
                                                     ) : (
                                                         <ImageIcon className="w-6 h-6 text-muted-foreground" />
                                                     )}
                                                 </div>
-                                                <div>
-                                                    <div className="font-medium text-foreground">{product.name}</div>
-                                                </div>
+                                                <div className="font-medium text-foreground">{product.name}</div>
                                             </div>
                                         </TableCell>
                                         {showStoreInfo && (
-                                            <TableCell>
-                                                <div className="font-medium text-foreground">{product.storeName}</div>
-                                            </TableCell>
+                                            <TableCell><div className="font-medium">{product.storeName}</div></TableCell>
                                         )}
+                                        <TableCell><Badge variant="outline">{product.category}</Badge></TableCell>
+                                        <TableCell><span className="font-medium">{formatPrice(product.price)}</span></TableCell>
                                         <TableCell>
-                                            <Badge variant="outline">{product.category}</Badge>
+                                            <Badge className={getStatusColor(product.status)} variant="outline">{product.status}</Badge>
                                         </TableCell>
+                                        <TableCell>{product.stock}</TableCell>
                                         <TableCell>
-                                            <span className="font-medium">{formatPrice(product.price)}</span>
-                                        </TableCell>
-                                        <TableCell>
-                                            <Badge className={getStatusColor(product.status)} variant="outline">
-                                                {product.status}
-                                            </Badge>
-                                        </TableCell>
-                                        <TableCell>
-                                            {product.stock}
-                                        </TableCell>
-                                        <TableCell>
-                                            <Button
-                                                variant="outline"
-                                                size="sm"
-                                                onClick={() => setSelectedProduct(product)}
-                                            >
-                                                <Eye className="w-4 h-4 mr-1" />
-                                                View
+                                            <Button variant="outline" size="sm" onClick={() => setSelectedProduct(product)}>
+                                                <Eye className="w-4 h-4 mr-1" />View
                                             </Button>
                                         </TableCell>
                                     </TableRow>
@@ -269,32 +258,18 @@ export default function ProductsList({ storeId, showStoreInfo = true }: Products
                         </Table>
                     )}
 
-                    {/* Pagination */}
                     {pagination.totalPages > 1 && (
                         <div className="flex items-center justify-between mt-4">
                             <p className="text-sm text-muted-foreground">
                                 Showing {((pagination.page - 1) * pagination.limit) + 1} to{' '}
-                                {Math.min(pagination.page * pagination.limit, pagination.total)} of{' '}
-                                {pagination.total} products
+                                {Math.min(pagination.page * pagination.limit, pagination.total)} of {pagination.total}
                             </p>
                             <div className="flex items-center gap-2">
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => loadProducts(pagination.page - 1)}
-                                    disabled={pagination.page <= 1}
-                                >
+                                <Button variant="outline" size="sm" onClick={() => loadProducts(pagination.page - 1)} disabled={pagination.page <= 1}>
                                     Previous
                                 </Button>
-                                <span className="text-sm">
-                                    Page {pagination.page} of {pagination.totalPages}
-                                </span>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => loadProducts(pagination.page + 1)}
-                                    disabled={pagination.page >= pagination.totalPages}
-                                >
+                                <span className="text-sm">Page {pagination.page} of {pagination.totalPages}</span>
+                                <Button variant="outline" size="sm" onClick={() => loadProducts(pagination.page + 1)} disabled={pagination.page >= pagination.totalPages}>
                                     Next
                                 </Button>
                             </div>
@@ -303,54 +278,18 @@ export default function ProductsList({ storeId, showStoreInfo = true }: Products
                 </CardContent>
             </Card>
 
-            {/* Product Details Dialog */}
             <Dialog open={!!selectedProduct} onOpenChange={() => setSelectedProduct(null)}>
-                <DialogContent className="max-w-2xl">
+                <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>Product Details</DialogTitle>
+                        <DialogTitle>{selectedProduct?.name}</DialogTitle>
                     </DialogHeader>
                     {selectedProduct && (
-                        <div className="space-y-4">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-sm font-medium">Product Name</label>
-                                    <p className="text-sm text-muted-foreground">{selectedProduct.name}</p>
-                                </div>
-                                <div>
-                                    <label className="text-sm font-medium">Price</label>
-                                    <p className="text-sm text-muted-foreground">{formatPrice(selectedProduct.price)}</p>
-                                </div>
-                                <div>
-                                    <label className="text-sm font-medium">Category</label>
-                                    <p className="text-sm text-muted-foreground">{selectedProduct.category}</p>
-                                </div>
-                                <div>
-                                    <label className="text-sm font-medium">Status</label>
-                                    <Badge className={getStatusColor(selectedProduct.status)}>
-                                        {selectedProduct.status}
-                                    </Badge>
-                                </div>
-                                <div>
-                                    <label className="text-sm font-medium">Stock</label>
-                                    <p className="text-sm text-muted-foreground">{selectedProduct.stock}</p>
-                                </div>
-                                <div>
-                                    <label className="text-sm font-medium">Store</label>
-                                    <p className="text-sm text-muted-foreground">{selectedProduct.storeName}</p>
-                                </div>
-                            </div>
-                            {selectedProduct.image && (
-                                <div>
-                                    <label className="text-sm font-medium">Product Image</label>
-                                    <div className="mt-2">
-                                        <img
-                                            src={selectedProduct.image}
-                                            alt={selectedProduct.name}
-                                            className="max-w-full h-48 object-cover rounded-lg"
-                                        />
-                                    </div>
-                                </div>
-                            )}
+                        <div className="space-y-2 text-sm">
+                            <p><strong>Store:</strong> {selectedProduct.storeName}</p>
+                            <p><strong>Category:</strong> {selectedProduct.category}</p>
+                            <p><strong>Price:</strong> {formatPrice(selectedProduct.price)}</p>
+                            <p><strong>Status:</strong> {selectedProduct.status}</p>
+                            {selectedProduct.description && <p><strong>Description:</strong> {selectedProduct.description}</p>}
                         </div>
                     )}
                 </DialogContent>

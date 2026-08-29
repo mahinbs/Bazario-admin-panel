@@ -18,7 +18,8 @@ import {
     ZoomIn
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { fetchMockTickets, fetchMockMessages, delay } from "@/lib/mockData";
+import { api } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth";
 
 interface SupportTicket {
     id: string;
@@ -69,6 +70,7 @@ const SupportInbox: React.FC = () => {
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const { toast } = useToast();
+    const { admin } = useAuth();
 
     const categoryOptions = [
         { value: 'order_issues', label: 'Order Issues', color: 'bg-red-100 text-red-800', icon: '🛒' },
@@ -83,25 +85,27 @@ const SupportInbox: React.FC = () => {
     const loadTickets = async () => {
         setLoading(true);
         try {
-            const mockData = await fetchMockTickets();
-            // Map mock data to component interface
-            const mappedTickets: SupportTicket[] = mockData.map(t => ({
+            const response = await api.getSupportTickets({
+                status: statusFilter !== 'all' ? statusFilter : undefined,
+            });
+            const ticketList = (response as any).tickets || response.data || [];
+            const mappedTickets: SupportTicket[] = ticketList.map((t: any) => ({
                 id: t.id,
-                ticket_number: t.id.split('-')[1],
-                customer_id: t.userId,
-                customer_name: t.userName,
-                customer_email: `${t.userName.toLowerCase().replace(' ', '.')}@example.com`,
-                customer_phone: "+1234567890",
+                ticket_number: t.ticket_number || t.id?.slice(0, 8),
+                customer_id: t.customer_id,
+                customer_name: t.customer?.name || 'Customer',
+                customer_email: t.customer?.email,
+                customer_phone: t.customer?.phone,
                 subject: t.subject,
-                description: t.message,
-                status: t.status === 'pending' ? 'in_progress' : t.status,
-                category: 'order_issues', // Default for mock
-                created_at: t.createdAt,
-                updated_at: t.createdAt,
-                last_message: t.message,
-                last_message_time: t.createdAt,
-                unread_count: Math.floor(Math.random() * 3),
-                last_activity: 'Created'
+                description: t.description,
+                status: t.status || 'open',
+                category: t.category || 'other',
+                created_at: t.created_at,
+                updated_at: t.updated_at || t.created_at,
+                last_message: t.description,
+                last_message_time: t.updated_at || t.created_at,
+                unread_count: 0,
+                last_activity: t.status,
             }));
             setTickets(mappedTickets);
         } catch (error) {
@@ -119,14 +123,16 @@ const SupportInbox: React.FC = () => {
     // Load messages for selected ticket
     const loadMessages = async (ticketId: string) => {
         try {
-            const mockMsgs = await fetchMockMessages(ticketId);
-            const mappedMsgs: SupportMessage[] = mockMsgs.map(m => ({
+            const response = await api.getSupportTicket(ticketId);
+            const ticket = (response as any).ticket || response.data;
+            const msgList = ticket?.messages || (response as any).messages || [];
+            const mappedMsgs: SupportMessage[] = msgList.map((m: any) => ({
                 id: m.id,
-                ticket_id: m.ticketId,
-                sender_type: m.sender === 'user' ? 'customer' : 'admin',
-                sender_id: m.sender === 'user' ? 'user-1' : 'admin-1',
+                ticket_id: ticketId,
+                sender_type: m.sender_type === 'admin' ? 'admin' : 'customer',
+                sender_id: m.sender_id,
                 message: m.message,
-                created_at: m.createdAt
+                created_at: m.created_at,
             }));
             setMessages(mappedMsgs);
         } catch (error) {
@@ -138,30 +144,27 @@ const SupportInbox: React.FC = () => {
     const sendMessage = async () => {
         if (!newMessage.trim() || !selectedTicket) return;
 
+        if (!admin?.id) {
+            toast({ title: "Error", description: "Admin session not found", variant: "destructive" });
+            return;
+        }
+
         setSendingMessage(true);
         try {
-            await delay(500); // Simulate API
-
-            const newMsg: SupportMessage = {
-                id: `msg-${Date.now()}`,
-                ticket_id: selectedTicket.id,
-                sender_type: 'admin',
-                sender_id: 'admin-1',
-                message: newMessage.trim(),
-                created_at: new Date().toISOString()
-            };
-
-            setMessages(prev => [...prev, newMsg]);
-
-            // Update ticket status to in_progress if it was open
-            if (selectedTicket.status === 'open') {
-                setSelectedTicket(prev => prev ? { ...prev, status: 'in_progress' } : null);
-                // Also update in tickets list
-                setTickets(prev => prev.map(t => t.id === selectedTicket.id ? { ...t, status: 'in_progress' } : t));
-            }
+            await api.sendSupportMessage(
+                selectedTicket.id,
+                newMessage.trim(),
+                admin.id,
+                'admin'
+            );
 
             setNewMessage('');
+            await loadMessages(selectedTicket.id);
+            await loadTickets();
 
+            if (selectedTicket.status === 'open') {
+                setSelectedTicket(prev => prev ? { ...prev, status: 'in_progress' } : null);
+            }
         } catch (error: any) {
             console.error('Error sending message:', error);
             toast({
@@ -177,10 +180,12 @@ const SupportInbox: React.FC = () => {
     // Update ticket status
     const updateTicketStatus = async (ticketId: string, status: string) => {
         try {
-            await delay(300); // Simulate API
+            const response = await api.updateTicketStatus(ticketId, status);
+            if (!(response as any).success) {
+                throw new Error((response as any).message || 'Update failed');
+            }
 
             setTickets(prev => prev.map(t => t.id === ticketId ? { ...t, status: status as any } : t));
-
             if (selectedTicket?.id === ticketId) {
                 setSelectedTicket(prev => prev ? { ...prev, status: status as any } : null);
             }

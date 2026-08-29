@@ -54,11 +54,43 @@ interface DashboardStats {
     };
 }
 
+interface Customer {
+    id: string;
+    name: string;
+    email?: string;
+    phone?: string;
+    created_at: string;
+    status?: string;
+}
+
 export default function UsersManagementNew() {
     const [stats, setStats] = useState<DashboardStats | null>(null);
+    const [customers, setCustomers] = useState<Customer[]>([]);
     const [loading, setLoading] = useState(true);
+    const [customersLoading, setCustomersLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
     const { toast } = useToast();
+
+    const fetchCustomers = async () => {
+        try {
+            setCustomersLoading(true);
+            const response = await api.getCustomers({
+                limit: 50,
+                search: searchTerm || undefined,
+            });
+            if (response.success && response.data) {
+                setCustomers(response.data as Customer[]);
+            }
+        } catch (error: any) {
+            toast({
+                title: "Error",
+                description: "Failed to load customers",
+                variant: "destructive",
+            });
+        } finally {
+            setCustomersLoading(false);
+        }
+    };
 
     const fetchStats = async () => {
         try {
@@ -80,7 +112,13 @@ export default function UsersManagementNew() {
 
     useEffect(() => {
         fetchStats();
+        fetchCustomers();
     }, []);
+
+    useEffect(() => {
+        const timer = setTimeout(() => fetchCustomers(), 300);
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
 
     if (loading) {
         return (
@@ -252,6 +290,50 @@ export default function UsersManagementNew() {
                             <span>Refresh Stats</span>
                         </Button>
                     </div>
+                </CardContent>
+            </Card>
+
+            {/* Customers List */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Customers</CardTitle>
+                    <CardDescription>Registered customers on the platform</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="mb-4">
+                        <Input
+                            placeholder="Search customers..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="max-w-md"
+                        />
+                    </div>
+                    {customersLoading ? (
+                        <p className="text-muted-foreground text-center py-8">Loading customers...</p>
+                    ) : customers.length === 0 ? (
+                        <p className="text-muted-foreground text-center py-8">No customers found</p>
+                    ) : (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Name</TableHead>
+                                    <TableHead>Email</TableHead>
+                                    <TableHead>Phone</TableHead>
+                                    <TableHead>Joined</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {customers.map((customer) => (
+                                    <TableRow key={customer.id}>
+                                        <TableCell className="font-medium">{customer.name || '—'}</TableCell>
+                                        <TableCell>{customer.email || '—'}</TableCell>
+                                        <TableCell>{customer.phone || '—'}</TableCell>
+                                        <TableCell>{new Date(customer.created_at).toLocaleDateString()}</TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    )}
                 </CardContent>
             </Card>
 

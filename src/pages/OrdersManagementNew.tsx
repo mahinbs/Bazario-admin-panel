@@ -21,15 +21,26 @@ import {
     Store
 } from "lucide-react";
 import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+    Table,
+    TableBody,
+    TableCell,
+    TableHead,
+    TableHeader,
+    TableRow,
+} from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
+
+interface AdminOrder {
+    id: string;
+    customer_name: string;
+    customer_phone?: string;
+    status: string;
+    total_amount: number;
+    payment_method?: string;
+    created_at: string;
+    store_owners?: { store_name: string };
+}
 
 interface DashboardStats {
     orders: {
@@ -50,9 +61,32 @@ interface DashboardStats {
 
 export default function OrdersManagementNew() {
     const [stats, setStats] = useState<DashboardStats | null>(null);
+    const [orders, setOrders] = useState<AdminOrder[]>([]);
     const [loading, setLoading] = useState(true);
+    const [ordersLoading, setOrdersLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState("");
     const { toast } = useToast();
+
+    const fetchOrders = async () => {
+        try {
+            setOrdersLoading(true);
+            const response = await api.getOrders({
+                limit: 50,
+                search: searchTerm || undefined,
+            });
+            if (response.success && response.data) {
+                setOrders(response.data as AdminOrder[]);
+            }
+        } catch (error: any) {
+            toast({
+                title: "Error",
+                description: "Failed to load orders",
+                variant: "destructive",
+            });
+        } finally {
+            setOrdersLoading(false);
+        }
+    };
 
     const fetchStats = async () => {
         try {
@@ -74,7 +108,13 @@ export default function OrdersManagementNew() {
 
     useEffect(() => {
         fetchStats();
+        fetchOrders();
     }, []);
+
+    useEffect(() => {
+        const timer = setTimeout(() => fetchOrders(), 300);
+        return () => clearTimeout(timer);
+    }, [searchTerm]);
 
     if (loading) {
         return (
@@ -348,6 +388,54 @@ export default function OrdersManagementNew() {
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Recent Orders */}
+            <Card>
+                <CardHeader>
+                    <CardTitle>Recent Orders</CardTitle>
+                    <CardDescription>Live orders from the platform</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="mb-4">
+                        <Input
+                            placeholder="Search by customer, phone, or order ID..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="max-w-md"
+                        />
+                    </div>
+                    {ordersLoading ? (
+                        <p className="text-muted-foreground text-center py-8">Loading orders...</p>
+                    ) : orders.length === 0 ? (
+                        <p className="text-muted-foreground text-center py-8">No orders found</p>
+                    ) : (
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead>Order ID</TableHead>
+                                    <TableHead>Customer</TableHead>
+                                    <TableHead>Store</TableHead>
+                                    <TableHead>Status</TableHead>
+                                    <TableHead>Amount</TableHead>
+                                    <TableHead>Date</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {orders.map((order) => (
+                                    <TableRow key={order.id}>
+                                        <TableCell className="font-mono text-xs">{order.id.slice(0, 8)}...</TableCell>
+                                        <TableCell>{order.customer_name}</TableCell>
+                                        <TableCell>{order.store_owners?.store_name || '—'}</TableCell>
+                                        <TableCell><Badge variant="outline">{order.status}</Badge></TableCell>
+                                        <TableCell>₹{Number(order.total_amount).toLocaleString()}</TableCell>
+                                        <TableCell>{new Date(order.created_at).toLocaleDateString()}</TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    )}
+                </CardContent>
+            </Card>
 
             {/* Information Note */}
             <Card>

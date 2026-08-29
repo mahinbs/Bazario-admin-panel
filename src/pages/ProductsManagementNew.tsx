@@ -18,7 +18,7 @@ import {
     DollarSign
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { fetchMockProducts, fetchMockStores, fetchMockDashboardStats } from "@/lib/mockData";
+import { api } from "@/lib/api";
 import ProductsList from "@/components/ProductsList";
 
 interface DashboardStats {
@@ -42,25 +42,22 @@ export default function ProductsManagementNew() {
 
     const fetchStats = async () => {
         try {
-            // Fetch necessary data to calculate stats
-            const [stores, productsData, dashboardStats] = await Promise.all([
-                fetchMockStores(),
-                fetchMockProducts(1, 1), // We just need the total count
-                fetchMockDashboardStats()
-            ]);
-
-            setStats({
-                stores: {
-                    total: stores.length,
-                    active: stores.filter(s => s.status === 'active').length
-                },
-                products: {
-                    total: productsData.total
-                },
-                revenue: {
-                    total: dashboardStats.totalRevenue
-                }
-            });
+            const response = await api.getDashboardStats();
+            if (response.success && response.data) {
+                const data = response.data as any;
+                setStats({
+                    stores: {
+                        total: data.stores?.total ?? 0,
+                        active: data.stores?.active ?? 0,
+                    },
+                    products: {
+                        total: data.products?.total ?? 0,
+                    },
+                    revenue: {
+                        total: data.revenue?.total ?? 0,
+                    },
+                });
+            }
         } catch (error: any) {
             console.error('Failed to fetch stats:', error);
             toast({

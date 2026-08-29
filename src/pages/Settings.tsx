@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { api } from "@/lib/api";
+import { useAuth } from "@/hooks/useAuth";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,17 +31,42 @@ import { useToast } from "@/hooks/use-toast";
 
 export default function Settings() {
   const { toast } = useToast();
+  const { admin } = useAuth();
   const [loading, setLoading] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
 
-  // Profile settings
   const [profile, setProfile] = useState({
     name: "Admin User",
     email: "admin@bazario.com",
-    phone: "+1 (555) 123-4567",
-    bio: "Platform administrator managing the bazario ecommerce ecosystem.",
+    phone: "",
+    bio: "Platform administrator managing the Bazario delivery ecosystem.",
     avatar: ""
   });
+
+  useEffect(() => {
+    const loadProfile = async () => {
+      try {
+        const response = await api.getProfile();
+        if (response.success && response.data) {
+          const data = response.data as any;
+          setProfile(prev => ({
+            ...prev,
+            name: data.full_name || admin?.full_name || prev.name,
+            email: data.email || admin?.email || prev.email,
+          }));
+        }
+      } catch (error) {
+        if (admin) {
+          setProfile(prev => ({
+            ...prev,
+            name: admin.full_name,
+            email: admin.email,
+          }));
+        }
+      }
+    };
+    loadProfile();
+  }, [admin]);
 
   // Notification settings
   const [notifications, setNotifications] = useState({
@@ -88,8 +115,13 @@ export default function Settings() {
   const handleSave = async (section: string) => {
     setLoading(true);
     try {
-      // Simulate API call for settings
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      if (section === 'Profile') {
+        await api.updateProfile({
+          full_name: profile.name,
+          phone: profile.phone,
+          bio: profile.bio,
+        });
+      }
 
       toast({
         title: "Settings Updated",

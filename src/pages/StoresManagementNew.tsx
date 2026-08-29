@@ -54,7 +54,7 @@ import {
 } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { fetchMockProducts, fetchMockStores, fetchMockDashboardStats, delay } from "@/lib/mockData";
+import { api } from "@/lib/api";
 
 interface Store {
     id: string;
@@ -144,36 +144,15 @@ export default function StoresManagementNew() {
     const fetchStores = async () => {
         try {
             setLoading(true);
-            const mockStores = await fetchMockStores();
-            const mappedStores: Store[] = mockStores.map(ms => ({
-                id: ms.id,
-                store_name: ms.name,
-                owner_name: "Mock Owner",
-                email: "owner@example.com",
-                phone: "+1 234 567 890",
-                address: ms.location,
-                business_type: "Retail",
-                category: "General",
-                status: ms.status === 'active' ? 'approved' : ms.status === 'blocked' ? 'suspended' : 'pending',
-                created_at: ms.joinDate,
-                gst_number: "GST123456789",
-                delivery_radius_km: 10,
-                min_order_amount: 500,
-                delivery_fee: 50,
-                estimated_delivery_time: 45
-            }));
+            const response = await api.getStores({
+                status: selectedStatus !== 'all' ? selectedStatus : undefined,
+                search: searchTerm || undefined,
+                limit: 100,
+            });
 
-            // Apply filtering logic here since we maintain state
-            let filtered = mappedStores;
-            if (selectedStatus !== 'all') {
-                filtered = filtered.filter(s => s.status === selectedStatus);
+            if (response.success && response.data) {
+                setStores(response.data as Store[]);
             }
-            // Search is applied in render (filteredStores variable) usually, but logic was duplicated. 
-            // We'll set all mapped stores to state and let render filter handle search.
-            // But we should simulate API filtering for status if that was server-side before.
-            // For now, let's keep all stores in state and filter in render for consistency with mock.
-            setStores(mappedStores);
-
         } catch (error: any) {
             toast({
                 title: "Error",
@@ -187,27 +166,11 @@ export default function StoresManagementNew() {
 
     const fetchStats = async () => {
         try {
-            // Fetch necessary data to calculate stats
-            const [storesData, productsData, dashboardStats] = await Promise.all([
-                fetchMockStores(),
-                fetchMockProducts(1, 1),
-                fetchMockDashboardStats()
-            ]);
-
-            setStats({
-                stores: {
-                    total: storesData.length,
-                    active: storesData.filter(s => s.status === 'active').length,
-                    pending: storesData.filter(s => s.status === 'pending').length,
-                    rejected: storesData.filter(s => s.status === 'blocked').length, // mapping blocked to rejected/suspended roughly
-                },
-                products: {
-                    total: productsData.total
-                },
-                revenue: {
-                    total: dashboardStats.totalRevenue
-                }
-            });
+            const response = await api.getDashboardStats();
+            if (response.success && response.data) {
+                const data = response.data as DashboardStats;
+                setStats(data);
+            }
         } catch (error: any) {
             console.error('Failed to fetch stats:', error);
         }
@@ -224,25 +187,23 @@ export default function StoresManagementNew() {
     const handleStoreAction = async (action: 'approve' | 'reject' | 'suspend', storeId: string, notes?: string) => {
         try {
             setActionLoading(true);
-            await delay(500); // Simulate API call
+            const statusMap = {
+                approve: 'approved',
+                reject: 'rejected',
+                suspend: 'suspended',
+            } as const;
 
-            // Optimistic update
-            setStores(prev => prev.map(s => {
-                if (s.id === storeId) {
-                    let newStatus: Store['status'] = s.status;
-                    if (action === 'approve') newStatus = 'approved';
-                    if (action === 'reject') newStatus = 'rejected';
-                    if (action === 'suspend') newStatus = 'suspended';
-                    return { ...s, status: newStatus };
-                }
-                return s;
-            }));
+            const response = await api.updateStoreStatus(storeId, statusMap[action], notes);
+            if (!response.success) {
+                throw new Error(response.message || `Failed to ${action} store`);
+            }
 
+            await fetchStores();
             toast({
                 title: "Success",
                 description: `Store ${action}d successfully`,
             });
-            fetchStats(); // Update stats
+            fetchStats();
             setActionDialog({ open: false, action: null, store: null });
             setNotes("");
 
@@ -260,11 +221,12 @@ export default function StoresManagementNew() {
     const handleDeleteStore = async (storeId: string) => {
         try {
             setActionLoading(true);
-            await delay(500); // Simulate API call
+            const response = await api.deleteStore(storeId);
+            if (!response.success) {
+                throw new Error(response.message || 'Failed to delete store');
+            }
 
-            // Optimistic update
-            setStores(prev => prev.filter(s => s.id !== storeId));
-
+            await fetchStores();
             toast({
                 title: "Success",
                 description: "Store deleted successfully",

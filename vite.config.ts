@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => ({
     port: 8080,
     proxy: {
       '/api': {
-        target: 'https://bazario-backend-jjna.onrender.com',
+        target: process.env.VITE_API_PROXY_TARGET || 'http://localhost:5001',
         changeOrigin: true,
         secure: false,
       },

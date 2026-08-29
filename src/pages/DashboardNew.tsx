@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api";
-import { fetchMockDailySummary } from "@/lib/mockData";
 
 interface DashboardStats {
     stores: {
@@ -61,19 +60,22 @@ export default function DashboardNew() {
             setLoading(true);
             const response = await api.getDashboardStats();
 
-            // Also fetch commission data via mock
             let commissionData = null;
             try {
-                const dailySummary = await fetchMockDailySummary();
-                if (dailySummary && dailySummary.length > 0) {
-                    const todayData = dailySummary[0]; // Assuming first item is latest/today
-                    commissionData = {
-                        todayPlatformCommission: todayData.commissionEarned,
-                        todayRiderEarnings: Math.floor(todayData.totalSales * 0.1), // Mock calculation based on sales
-                        totalCashCollected: todayData.totalSales,
-                        avgCommissionPerOrder: todayData.totalSales > 0 ? (todayData.commissionEarned / (todayData.totalSales / 500)) : 15,
-                        pendingSettlements: 5 // Mock value
-                    };
+                const commissionResponse = await api.getCommissionDailySummary();
+                if (commissionResponse.success && commissionResponse.data) {
+                    const summary = (commissionResponse.data as any).summary;
+                    if (summary) {
+                        commissionData = {
+                            todayPlatformCommission: summary.total_platform_commission ?? 0,
+                            todayRiderEarnings: summary.total_rider_earnings ?? 0,
+                            totalCashCollected: summary.total_cash_collected ?? 0,
+                            avgCommissionPerOrder: summary.total_orders > 0
+                                ? (summary.total_platform_commission ?? 0) / summary.total_orders
+                                : 0,
+                            pendingSettlements: summary.is_settled ? 0 : 1,
+                        };
+                    }
                 }
             } catch (commissionError) {
                 console.warn('Failed to fetch commission data:', commissionError);

@@ -16,7 +16,7 @@ import {
     Clock
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { fetchMockCommissionSettings, fetchMockDailySummary, delay } from "@/lib/mockData";
+import { api } from "@/lib/api";
 
 export default function Commission() {
     const { toast } = useToast();
@@ -51,46 +51,59 @@ export default function Commission() {
         settledToday: 0
     });
 
-    // Load commission settings
     const loadCommissionSettings = async () => {
         try {
-            const data = await fetchMockCommissionSettings();
-            // Map mock data which is simpler to the full state if needed, or just use defaults/mock values 
-            // Since mockCommissionSettings is simple in mockData.ts, we might want to expand it there or just simulate here.
-            // For now, I'll simulate a successful fetch and keep the default values or slightly randomize them to show "fetched" data
-            // actually mockData has defaultRate and storeSpecificRates. Let's just pretend we fetched the full settings.
-
-            // simulating a more complete response based on what the UI expects
-            // In a real mock, we'd expand mockData.ts, but for now let's just use the delay and keep state or partial update.
-            // Let's assume the default state IS what we fetched for this simple mock integration unless we want to change values.
-
+            const response = await api.getCommissionSettings();
+            if (response.success && response.data) {
+                const s = response.data as Record<string, number>;
+                setCommissionSettings({
+                    platformCommissionPercentage: String(s.platform_commission_percentage ?? 15),
+                    platformCommissionFixed: String(s.platform_commission_fixed ?? 0),
+                    riderBaseFee: String(s.rider_base_fee ?? 50),
+                    riderCommissionPercentage: String(s.rider_commission_percentage ?? 5),
+                    riderCommissionMaxCap: String(s.rider_commission_max_cap ?? 30),
+                    riderDistanceBonusPerKm: String(s.rider_distance_bonus_per_km ?? 5),
+                    riderTimeBonusPerMinute: String(s.rider_time_bonus_per_minute ?? 0.5),
+                    deliveryFeeBase: String(s.delivery_fee_base ?? 25),
+                    deliveryFeePerKm: String(s.delivery_fee_per_km ?? 3),
+                    freeDeliveryThreshold: String(s.free_delivery_threshold ?? 500),
+                    codHandlingFee: String(s.cod_handling_fee ?? 5),
+                    codFeePercentage: String(s.cod_fee_percentage ?? 1),
+                });
+            }
         } catch (error) {
             console.error('Failed to load commission settings:', error);
         }
     };
 
-    // Load commission statistics
     const loadCommissionStats = async () => {
         setLoadingStats(true);
         try {
-            // Fetch daily summary to calculate today's stats
-            const dailySummary = await fetchMockDailySummary();
-            // detailed stats are not fully in mockDailySummary, so we will generate some based on it or just mock completely
+            const [summaryResponse, dashboardResponse] = await Promise.all([
+                api.getCommissionDailySummary(),
+                api.getDashboardStats(),
+            ]);
 
-            // let's grab the latest day from summary for "today"
-            const todayData = dailySummary[0] || { totalSales: 0, commissionEarned: 0 };
+            const summary = summaryResponse.success
+                ? (summaryResponse.data as any)?.summary
+                : null;
+
+            const riders = dashboardResponse.success
+                ? (dashboardResponse.data as any)?.riders
+                : null;
 
             setStats({
-                todayCommission: todayData.commissionEarned,
-                todayRiderEarnings: Math.floor(todayData.totalSales * 0.1), // Mock calculation
-                todayOrders: Math.floor(todayData.totalSales / 500), // Avg order value 500
-                totalCashCollected: todayData.totalSales,
-                avgCommissionPerOrder: todayData.totalSales > 0 ? (todayData.commissionEarned / (todayData.totalSales / 500)) : 15,
-                activeRiders: 12,
-                pendingSettlements: 5,
-                settledToday: 8
+                todayCommission: summary?.total_platform_commission ?? 0,
+                todayRiderEarnings: summary?.total_rider_earnings ?? 0,
+                todayOrders: summary?.total_orders ?? 0,
+                totalCashCollected: summary?.total_cash_collected ?? 0,
+                avgCommissionPerOrder: summary?.total_orders > 0
+                    ? (summary.total_platform_commission ?? 0) / summary.total_orders
+                    : 0,
+                activeRiders: riders?.active ?? 0,
+                pendingSettlements: summary?.is_settled ? 0 : 1,
+                settledToday: summary?.is_settled ? 1 : 0,
             });
-
         } catch (error) {
             console.error('Failed to load commission stats:', error);
         } finally {
@@ -106,7 +119,25 @@ export default function Commission() {
     const handleSaveSettings = async () => {
         setLoading(true);
         try {
-            await delay(800); // Simulate API call
+            const payload = {
+                platform_commission_percentage: parseFloat(commissionSettings.platformCommissionPercentage),
+                platform_commission_fixed: parseFloat(commissionSettings.platformCommissionFixed),
+                rider_base_fee: parseFloat(commissionSettings.riderBaseFee),
+                rider_commission_percentage: parseFloat(commissionSettings.riderCommissionPercentage),
+                rider_commission_max_cap: parseFloat(commissionSettings.riderCommissionMaxCap),
+                rider_distance_bonus_per_km: parseFloat(commissionSettings.riderDistanceBonusPerKm),
+                rider_time_bonus_per_minute: parseFloat(commissionSettings.riderTimeBonusPerMinute),
+                delivery_fee_base: parseFloat(commissionSettings.deliveryFeeBase),
+                delivery_fee_per_km: parseFloat(commissionSettings.deliveryFeePerKm),
+                free_delivery_threshold: parseFloat(commissionSettings.freeDeliveryThreshold),
+                cod_handling_fee: parseFloat(commissionSettings.codHandlingFee),
+                cod_fee_percentage: parseFloat(commissionSettings.codFeePercentage),
+            };
+
+            const response = await api.updateCommissionSettings(payload);
+            if (!response.success) {
+                throw new Error(response.message || 'Failed to save settings');
+            }
 
             toast({
                 title: "Commission Settings Saved",
@@ -114,7 +145,6 @@ export default function Commission() {
                 duration: 3000,
             });
 
-            // Reload stats to reflect changes (simulated)
             loadCommissionStats();
         } catch (error) {
             toast({

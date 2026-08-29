@@ -14,7 +14,7 @@ import {
     Copy
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { fetchMockCoupons, delay, Coupon as MockCoupon } from "@/lib/mockData";
+import { api } from "@/lib/api";
 
 // Extend MockCoupon or redefine to match component needs if slightly different
 // Using local interface for component adapting mock data
@@ -75,25 +75,10 @@ const CouponManagement: React.FC = () => {
     const loadCoupons = async () => {
         setLoading(true);
         try {
-            const mockData = await fetchMockCoupons();
-            const mappedCoupons: Coupon[] = mockData.map(c => ({
-                id: c.id,
-                code: c.code,
-                name: `Discount ${c.code}`,
-                description: `Get ${c.discountValue}${c.discountType === 'percentage' ? '%' : ' OFF'}`,
-                discount_type: c.discountType === 'percentage' ? 'percentage' : 'fixed_amount',
-                discount_value: c.discountValue,
-                minimum_order_amount: c.minOrderValue,
-                usage_limit_per_customer: 1,
-                total_usage_limit: c.usageLimit,
-                total_used_count: c.usageCount,
-                is_active: c.status === 'active',
-                valid_from: new Date().toISOString(),
-                valid_until: c.expiryDate,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-            }));
-            setCoupons(mappedCoupons);
+            const response = await api.getCoupons({ limit: 100 });
+            if (response.success && response.data) {
+                setCoupons(response.data as Coupon[]);
+            }
         } catch (error) {
             console.error('Error loading coupons:', error);
             toast({
@@ -151,42 +136,39 @@ const CouponManagement: React.FC = () => {
         setLoading(true);
 
         try {
-            await delay(500); // Simulate API
-
-            const newCoupon: Coupon = {
-                id: editingCoupon ? editingCoupon.id : `coupon-${Date.now()}`,
+            const payload = {
                 code: formData.code.toUpperCase(),
                 name: formData.name,
                 description: formData.description,
                 discount_type: formData.discount_type,
                 discount_value: parseFloat(formData.discount_value),
                 minimum_order_amount: parseFloat(formData.minimum_order_amount) || 0,
+                maximum_discount_amount: formData.maximum_discount_amount
+                    ? parseFloat(formData.maximum_discount_amount)
+                    : undefined,
                 usage_limit_per_customer: parseInt(formData.usage_limit_per_customer),
                 total_usage_limit: formData.total_usage_limit ? parseInt(formData.total_usage_limit) : undefined,
-                total_used_count: editingCoupon ? editingCoupon.total_used_count : 0,
-                is_active: true,
                 valid_from: new Date(formData.valid_from).toISOString(),
                 valid_until: new Date(formData.valid_until).toISOString(),
-                created_at: editingCoupon ? editingCoupon.created_at : new Date().toISOString(),
-                updated_at: new Date().toISOString()
+                is_active: true,
             };
 
-            if (editingCoupon) {
-                setCoupons(prev => prev.map(c => c.id === editingCoupon.id ? newCoupon : c));
-                toast({
-                    title: "Success",
-                    description: "Coupon updated successfully!",
-                });
-            } else {
-                setCoupons(prev => [newCoupon, ...prev]);
-                toast({
-                    title: "Success",
-                    description: "Coupon created successfully!",
-                });
+            const response = editingCoupon
+                ? await api.updateCoupon(editingCoupon.id, payload)
+                : await api.createCoupon(payload);
+
+            if (!response.success) {
+                throw new Error(response.message || 'Failed to save coupon');
             }
+
+            toast({
+                title: "Success",
+                description: editingCoupon ? "Coupon updated successfully!" : "Coupon created successfully!",
+            });
 
             setIsDialogOpen(false);
             resetForm();
+            await loadCoupons();
         } catch (error: any) {
             console.error('Error saving coupon:', error);
             toast({
@@ -228,14 +210,15 @@ const CouponManagement: React.FC = () => {
     // Toggle coupon status
     const toggleCouponStatus = async (coupon: Coupon) => {
         try {
-            await delay(300); // Simulate API
-            setCoupons(prev => prev.map(c => c.id === coupon.id ? { ...c, is_active: !c.is_active } : c));
-
+            const response = await api.toggleCoupon(coupon.id);
+            if (!response.success) {
+                throw new Error(response.message || 'Failed to update coupon');
+            }
+            await loadCoupons();
             toast({
                 title: "Success",
                 description: `Coupon ${!coupon.is_active ? 'activated' : 'deactivated'} successfully!`,
             });
-
         } catch (error) {
             console.error('Error toggling coupon status:', error);
             toast({
@@ -265,14 +248,15 @@ const CouponManagement: React.FC = () => {
 
         setDeletingCoupon(coupon.id);
         try {
-            await delay(500); // Simulate API
-            setCoupons(prev => prev.filter(c => c.id !== coupon.id));
-
+            const response = await api.deleteCoupon(coupon.id);
+            if (!response.success) {
+                throw new Error(response.message || 'Failed to delete coupon');
+            }
+            await loadCoupons();
             toast({
                 title: "Success",
                 description: `Coupon "${coupon.code}" has been deleted successfully.`,
             });
-
         } catch (error: any) {
             console.error('Error deleting coupon:', error);
             toast({
