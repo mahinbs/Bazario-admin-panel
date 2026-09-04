@@ -73,7 +73,7 @@ export default function Login() {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="admin@bazario.com"
+                    placeholder="you@example.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="pl-10 h-12 bg-background/50 border-border/50 focus:border-brand-pink focus:ring-brand-pink/20"
@@ -139,15 +139,6 @@ export default function Login() {
                 )}
               </Button>
             </form>
-
-            {/* Demo Credentials */}
-            <div className="mt-6 p-4 bg-muted/50 rounded-lg border border-border/50">
-              <h4 className="text-sm font-medium text-foreground mb-2">Demo Credentials:</h4>
-              <div className="text-xs text-muted-foreground space-y-1">
-                <p><strong>Email:</strong> admin@bazario.com</p>
-                <p><strong>Password:</strong> admin123</p>
-              </div>
-            </div>
 
             {/* Footer */}
             <div className="text-center pt-4 border-t border-border/50">
