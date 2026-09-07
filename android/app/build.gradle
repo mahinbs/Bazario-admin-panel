@@ -16,8 +16,26 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Release signing. The keystore path and password come from the environment so
+    // no credential is committed:
+    //   BAZARIO_KEYSTORE          absolute path to bazario-release.keystore
+    //   BAZARIO_KEYSTORE_PASSWORD its password
+    // Without them the release build falls back to unsigned output.
+    signingConfigs {
+        release {
+            def ksPath = System.getenv("BAZARIO_KEYSTORE")
+            def ksPass = System.getenv("BAZARIO_KEYSTORE_PASSWORD")
+            if (ksPath != null && ksPass != null && file(ksPath).exists()) {
+                storeFile file(ksPath)
+                storePassword ksPass
+                keyAlias "bazario"
+                keyPassword ksPass
+            }
+        }
+    }
     buildTypes {
         release {
+            signingConfig signingConfigs.release
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
